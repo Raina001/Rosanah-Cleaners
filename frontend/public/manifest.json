@@ -1,0 +1,16 @@
+{
+  "name": "Rosanah Cleaners",
+  "short_name": "Rosanah",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#eb1997",
+  "theme_color": "#eb1997",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
