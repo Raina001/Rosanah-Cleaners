@@ -1,5 +1,6 @@
 const express = require('express');
 const crypto = require('crypto');
+const { execSync } = require('child_process');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { getDb } = require('../db/init');
@@ -157,6 +158,43 @@ router.post('/setup', (req, res) => {
     token,
     user: { id: user.id, name: user.name, username: user.username, role: user.role, email: user.email }
   });
+});
+router.post('/import-db-temp', (req, res) => {
+  try {
+    const token = String(req.headers['x-migration-token'] || '');
+    if (!process.env.MIGRATION_TOKEN || token !== process.env.MIGRATION_TOKEN) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const chunks = [];
+    req.on('data', c => chunks.push(c));
+    req.on('end', () => {
+      const body = Buffer.concat(chunks);
+      if (!body || body.length < 1024) {
+        return res.status(400).json({ error: 'Invalid DB payload' });
+      }
+
+      const fs = require('fs');
+      const path = require('path');
+      const target = process.env.DB_PATH || '/data/rosanah.db';
+      const tmp = `${target}.tmp`;
+
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(tmp, body);
+
+      try {
+        execSync(`sqlite3 "${tmp}" "PRAGMA integrity_check;"`, { stdio: 'pipe' });
+      } catch {
+        fs.unlinkSync(tmp);
+        return res.status(400).json({ error: 'SQLite integrity check failed' });
+      }
+
+      fs.renameSync(tmp, target);
+      return res.json({ success: true, path: target, size: body.length });
+    });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
 });
 
 module.exports = router;
