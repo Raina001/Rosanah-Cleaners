@@ -213,5 +213,27 @@ router.post('/import-db-temp', (req, res) => {
     return res.status(500).json({ error: e.message });
   }
 });
+router.get('/debug-db-temp', (req, res) => {
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const Database = require('better-sqlite3');
 
+    const dbPath = process.env.DB_PATH || path.join(__dirname, '..', 'rosanah.db');
+    const exists = fs.existsSync(dbPath);
+    const size = exists ? fs.statSync(dbPath).size : 0;
+
+    let setupValue = null;
+    if (exists) {
+      const probe = new Database(dbPath, { readonly: true, fileMustExist: true });
+      const row = probe.prepare("SELECT value FROM settings WHERE key='setup_complete'").get();
+      probe.close();
+      setupValue = row?.value ?? null;
+    }
+
+    res.json({ dbPath, exists, size, setup_complete_value: setupValue });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 module.exports = router;
