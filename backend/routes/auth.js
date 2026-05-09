@@ -162,23 +162,44 @@ router.post('/setup', (req, res) => {
     user: { id: user.id, name: user.name, username: user.username, role: user.role, email: user.email }
   });
 });
+
 router.post('/admin-reset-password-temp', (req, res) => {
   try {
     const token = String(req.headers['x-migration-token'] || '');
     if (!process.env.MIGRATION_TOKEN || token !== process.env.MIGRATION_TOKEN) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
+
     const { username, new_password } = req.body || {};
-    if (!username || !new_password || String(new_password).length < 6) {
-      return res.status(400).json({ error: 'username and new_password (min 6 chars) are required' });
+    if (!new_password || String(new_password).length < 6) {
+      return res.status(400).json({ error: 'new_password (min 6 chars) is required' });
     }
-    const bcrypt = require('bcryptjs');
+
     const db = getDb();
-    const user = db.prepare('SELECT id, username, role, active FROM users WHERE username = ?').get(String(username));
-    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    // First try exact username/email provided, then fallback to first admin.
+    let user = null;
+    if (username) {
+      user = db
+        .prepare('SELECT id, username, role, active FROM users WHERE username = ? OR email = ? LIMIT 1')
+        .get(String(username), String(username));
+    }
+
+    if (!user) {
+      user = db
+        .prepare("SELECT id, username, role, active FROM users WHERE role = 'admin' ORDER BY id ASC LIMIT 1")
+        .get();
+    }
+
+    if (!user) return res.status(404).json({ error: 'Admin user not found' });
+
     const hash = bcrypt.hashSync(String(new_password), 10);
     db.prepare('UPDATE users SET password = ?, active = 1 WHERE id = ?').run(hash, user.id);
-    return res.json({ success: true, user: { id: user.id, username: user.username, role: user.role, active: 1 } });
+
+    return res.json({
+      success: true,
+      user: { id: user.id, username: user.username, role: user.role, active: 1 }
+    });
   } catch (e) {
     return res.status(500).json({ error: e.message });
   }
