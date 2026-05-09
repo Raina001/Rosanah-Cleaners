@@ -236,4 +236,20 @@ router.get('/debug-db-temp', (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
+router.post('/fix-setup-flag-temp', (req, res) => {
+  try {
+    const token = String(req.headers['x-migration-token'] || '');
+    if (!process.env.MIGRATION_TOKEN || token !== process.env.MIGRATION_TOKEN) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const db = getDb();
+    db.prepare("UPDATE settings SET value = '1' WHERE key = 'setup_complete'").run();
+    const row = db.prepare("SELECT value FROM settings WHERE key = 'setup_complete'").get();
+
+    res.json({ success: true, setup_complete: row?.value });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 module.exports = router;
