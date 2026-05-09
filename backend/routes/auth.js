@@ -1,6 +1,5 @@
 const express = require('express');
 const crypto = require('crypto');
-const { execSync } = require('child_process');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { getDb } = require('../db/init');
@@ -21,7 +20,11 @@ router.post('/login', (req, res) => {
     return res.status(401).json({ error: 'Invalid username or password' });
   }
 
-  const token = jwt.sign({ id: user.id, name: user.name, username: user.username, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+  const token = jwt.sign(
+    { id: user.id, name: user.name, username: user.username, email: user.email, role: user.role },
+    JWT_SECRET,
+    { expiresIn: '7d' }
+  );
   res.json({ token, user: { id: user.id, name: user.name, username: user.username, email: user.email, role: user.role } });
 });
 
@@ -159,6 +162,8 @@ router.post('/setup', (req, res) => {
     user: { id: user.id, name: user.name, username: user.username, role: user.role, email: user.email }
   });
 });
+
+// Temporary migration endpoint. Remove after DB transfer completes.
 router.post('/import-db-temp', (req, res) => {
   try {
     const token = String(req.headers['x-migration-token'] || '');
@@ -176,6 +181,8 @@ router.post('/import-db-temp', (req, res) => {
 
       const fs = require('fs');
       const path = require('path');
+      const Database = require('better-sqlite3');
+
       const target = process.env.DB_PATH || '/data/rosanah.db';
       const tmp = `${target}.tmp`;
 
@@ -183,10 +190,20 @@ router.post('/import-db-temp', (req, res) => {
       fs.writeFileSync(tmp, body);
 
       try {
-        execSync(`sqlite3 "${tmp}" "PRAGMA integrity_check;"`, { stdio: 'pipe' });
-      } catch {
-        fs.unlinkSync(tmp);
-        return res.status(400).json({ error: 'SQLite integrity check failed' });
+        const probe = new Database(tmp, { readonly: true, fileMustExist: true });
+        const row = probe.prepare('PRAGMA integrity_check;').get();
+        probe.close();
+        const result = String(Object.values(row || {})[0] || '').toLowerCase();
+
+        if (result !== 'ok') {
+          fs.unlinkSync(tmp);
+          return res.status(400).json({ error: 'SQLite integrity check failed' });
+        }
+      } catch (e) {
+        try {
+          fs.unlinkSync(tmp);
+        } catch (_) {}
+        return res.status(400).json({ error: `SQLite integrity check failed: ${e.message}` });
       }
 
       fs.renameSync(tmp, target);
